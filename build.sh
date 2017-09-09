@@ -18,7 +18,7 @@ fi
 
 echo "setting up build..."
 mkdir "$BUILD"
-make O="$BUILD" msm-perf_ailsa_ii_defconfig
+make O="$BUILD" schwifty_defconfig
 
 echo "building kernel..."
 make O="$BUILD" -j$NPR
