@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -238,7 +238,11 @@ enum fg_mem_data_index {
 static struct fg_mem_setting settings[FG_MEM_SETTING_MAX] = {
 	/*       ID                    Address, Offset, Value*/
 	SETTING(SOFT_COLD,       0x454,   0,      100),
+#ifdef CONFIG_BOARD_CANDICE
+	SETTING(SOFT_HOT,        0x454,   1,      500),
+#else
 	SETTING(SOFT_HOT,        0x454,   1,      450),
+#endif
 	SETTING(HARD_COLD,       0x454,   2,      0),
 	SETTING(HARD_HOT,        0x454,   3,      550),
 	SETTING(RESUME_SOC,      0x45C,   1,      99),
@@ -324,10 +328,13 @@ static int fg_est_dump;
 module_param_named(
 	first_est_dump, fg_est_dump, int, S_IRUSR | S_IWUSR
 );
-static char *fg_batt_type_default = "zte_p894a01_3000mah";
-static char *fg_batt_type_batteryid_1 = "ZTE_BATTERY_DATA_ID_1";
 
-static char *fg_batt_type = "ZTE_BATTERY_DATA_ID_1";//zte add 
+char *fg_batt_type_default = "zte_p894a01_3000mah";
+#if defined(CONFIG_BOARD_CANDICE)
+char *fg_batt_type = "ZTE_BATTERY_DATA_ID_2";
+#else
+char *fg_batt_type = "ZTE_BATTERY_DATA_ID_1";
+#endif
 
 module_param_named(
 	battery_type, fg_batt_type, charp, S_IRUSR | S_IWUSR
@@ -674,6 +681,7 @@ struct fg_trans {
 	struct fg_chip *chip;
 	struct fg_log_buffer *log; /* log buffer */
 	u8 *data;	/* fg data that is read */
+	struct mutex memif_dfs_lock; /* Prevent thread concurrency */
 };
 
 struct fg_dbgfs {
@@ -2190,6 +2198,8 @@ static int get_prop_capacity(struct fg_chip *chip)
 	int msoc, rc;
 	bool vbatt_low_sts;
 	u8 buffer[3];
+	int capacity = 0;
+
 	fg_mem_lock(chip);
 	rc = fg_mem_read(chip, buffer, 0x56C, 3, 1, 0);
 	if (rc) {
@@ -2250,8 +2260,11 @@ static int get_prop_capacity(struct fg_chip *chip)
 		return FULL_CAPACITY;
 	}
 
-	return DIV_ROUND_CLOSEST((msoc - 1) * (FULL_CAPACITY - 2),
+	capacity = DIV_ROUND_CLOSEST((msoc - 1) * (FULL_CAPACITY + 1),
 			FULL_SOC_RAW - 2) + 1;
+	if (capacity >= FULL_CAPACITY)
+		capacity = FULL_CAPACITY;
+	return capacity;
 }
 
 #define HIGH_BIAS	3
@@ -2333,7 +2346,10 @@ static int set_prop_jeita_temp(struct fg_chip *chip,
 			settings[type].address,
 			settings[type].offset, decidegc);
 
+/* For board candice, Donot accept user space setting from hvdcpd, we use para in this driver */
+#ifndef CONFIG_BOARD_CANDICE
 	settings[type].value = decidegc;
+#endif
 
 	cancel_delayed_work_sync(
 		&chip->update_jeita_setting);
@@ -6294,25 +6310,21 @@ wait:
 	}
 
 	if (fg_debug_mask & FG_STATUS)
-		pr_info("battery id = %d\n",
-				get_sram_prop_now(chip, FG_DATA_BATT_ID));
-	profile_node = of_batterydata_get_best_profile(batt_node, "bms",
-							fg_batt_type_batteryid_1);
+		pr_info("battery id = %d\n", get_sram_prop_now(chip, FG_DATA_BATT_ID));
+
+	profile_node = of_batterydata_get_best_profile(batt_node, "bms", fg_batt_type);
 	if (!profile_node) {
-		pr_err("couldn't find profile handle ,battery_type1 is %s\n",fg_batt_type_batteryid_1);
+		pr_err("couldn't find profile handle ,battery_type1 is %s\n", fg_batt_type);
 		profile_node = of_batterydata_get_best_profile(batt_node, "bms",
 							fg_batt_type_default);
-	if (!profile_node) {
-			pr_err("couldn't find profile handle ,battery_type_default is %s\n",fg_batt_type_default);
-		rc = -ENODATA;
-		goto no_profile;
-		}else{
+		if (!profile_node) {
+			pr_err("couldn't find profile, use %s\n", fg_batt_type_default);
+			rc = -ENODATA;
+			goto no_profile;
+		} else
 			fg_batt_type = fg_batt_type_default;
-		}	
-	}else{
-		fg_batt_type = fg_batt_type_batteryid_1;
 	}
-	pr_debug("fg_batt_type is %s\n",fg_batt_type);
+	pr_debug("fg_batt_type is %s\n", fg_batt_type);
 
 	/* read rslow compensation values if they're available */
 	rc = of_property_read_u32(profile_node, "qcom,chg-rs-to-rslow",
@@ -7518,6 +7530,7 @@ static int fg_memif_data_open(struct inode *inode, struct file *file)
 	trans->addr = dbgfs_data.addr;
 	trans->chip = dbgfs_data.chip;
 	trans->offset = trans->addr;
+	mutex_init(&trans->memif_dfs_lock);
 
 	file->private_data = trans;
 	return 0;
@@ -7529,6 +7542,7 @@ static int fg_memif_dfs_close(struct inode *inode, struct file *file)
 
 	if (trans && trans->log && trans->data) {
 		file->private_data = NULL;
+		mutex_destroy(&trans->memif_dfs_lock);
 		kfree(trans->log);
 		kfree(trans->data);
 		kfree(trans);
@@ -7686,10 +7700,13 @@ static ssize_t fg_memif_dfs_reg_read(struct file *file, char __user *buf,
 	size_t ret;
 	size_t len;
 
+	mutex_lock(&trans->memif_dfs_lock);
 	/* Is the the log buffer empty */
 	if (log->rpos >= log->wpos) {
-		if (get_log_data(trans) <= 0)
-			return 0;
+		if (get_log_data(trans) <= 0) {
+			len = 0;
+			goto unlock_mutex;
+		}
 	}
 
 	len = min(count, log->wpos - log->rpos);
@@ -7697,7 +7714,8 @@ static ssize_t fg_memif_dfs_reg_read(struct file *file, char __user *buf,
 	ret = copy_to_user(buf, &log->data[log->rpos], len);
 	if (ret == len) {
 		pr_err("error copy sram register values to user\n");
-		return -EFAULT;
+		len = -EFAULT;
+		goto unlock_mutex;
 	}
 
 	/* 'ret' is the number of bytes not copied */
@@ -7705,6 +7723,9 @@ static ssize_t fg_memif_dfs_reg_read(struct file *file, char __user *buf,
 
 	*ppos += len;
 	log->rpos += len;
+
+unlock_mutex:
+	mutex_unlock(&trans->memif_dfs_lock);
 	return len;
 }
 
@@ -7725,14 +7746,20 @@ static ssize_t fg_memif_dfs_reg_write(struct file *file, const char __user *buf,
 	int cnt = 0;
 	u8  *values;
 	size_t ret = 0;
+	char *kbuf;
+	u32 offset;
 
 	struct fg_trans *trans = file->private_data;
-	u32 offset = trans->offset;
+
+	mutex_lock(&trans->memif_dfs_lock);
+	offset = trans->offset;
 
 	/* Make a copy of the user data */
-	char *kbuf = kmalloc(count + 1, GFP_KERNEL);
-	if (!kbuf)
-		return -ENOMEM;
+	kbuf = kmalloc(count + 1, GFP_KERNEL);
+	if (!kbuf) {
+		ret = -ENOMEM;
+		goto unlock_mutex;
+	}
 
 	ret = copy_from_user(kbuf, buf, count);
 	if (ret == count) {
@@ -7771,6 +7798,8 @@ static ssize_t fg_memif_dfs_reg_write(struct file *file, const char __user *buf,
 
 free_buf:
 	kfree(kbuf);
+unlock_mutex:
+	mutex_unlock(&trans->memif_dfs_lock);
 	return ret;
 }
 
