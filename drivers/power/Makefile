@@ -1,4 +1,5 @@
 ccflags-$(CONFIG_POWER_SUPPLY_DEBUG) := -DDEBUG
+ccflags-$(CONFIG_BOARD_AILSA_II) := -DZTE_AILSA_II_VR
 
 ifneq (,$(filter P996A01_N P996A04_N, $(TARGET_PRODUCT)))
 ccflags-y += -DZTE_AILSA_II_VR
