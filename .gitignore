@@ -99,3 +99,7 @@ all.config
 
 drivers/soc/qcom/vendor
 include/soc/qcom/vendor
+
+# Leave out building folders
+build/
+out/
