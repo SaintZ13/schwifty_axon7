@@ -190,6 +190,12 @@ static ssize_t sel_write_enforce(struct file *file, const char __user *buf,
 #define ZTE_TF_ENABLE_ENFORCE
 #endif
 
+#ifdef CONFIG_SECURITY_SELINUX_DEFPERMISSIVE
+new_value = 0;
+#else
+new_value = 1;
+#endif
+
 #if defined(ZTE_FEATURE_TF_PARTIAL)
 #define ZTE_TF_ENABLE_ENFORCE
 #endif

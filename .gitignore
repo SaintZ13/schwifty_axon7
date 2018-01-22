@@ -103,3 +103,4 @@ include/soc/qcom/vendor
 # Leave out building folders
 build/
 out/
+build.sh
