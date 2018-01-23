@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -36,7 +36,7 @@
  *
  */
 
-#include "wni_cfg.h"
+#include "wniCfgSta.h"
 #include "aniGlobal.h"
 #include "cfgApi.h"
 
@@ -170,10 +170,11 @@ void limRemovePBCSessions(tpAniSirGlobal pMac, tSirMacAddr pRemoveMac,tpPESessio
         if (vos_mem_compare((tANI_U8 *)pbc->addr,
                             (tANI_U8 *)pRemoveMac, sizeof(tSirMacAddr))) {
           prev->next = pbc->next;
-          if (pbc == psessionEntry->pAPWPSPBCSession)
+          if (pbc == psessionEntry->pAPWPSPBCSession) {
             psessionEntry->pAPWPSPBCSession = pbc->next;
-          vos_mem_free(pbc);
-          return;
+            vos_mem_free(pbc);
+            return;
+          }
         }
         prev = pbc;
         pbc = pbc->next;
@@ -628,7 +629,7 @@ limIndicateProbeReqToHDD(tpAniSirGlobal pMac, tANI_U8 *pBd,
     limSendSmeMgmtFrameInd( pMac, pHdr->fc.subType,
                (tANI_U8*)pHdr, (frameLen + sizeof(tSirMacMgmtHdr)),
                psessionEntry->smeSessionId, WDA_GET_RX_CH(pBd),
-               psessionEntry, WDA_GET_RX_RSSI_NORMALIZED(pBd));
+               psessionEntry, 0);
 } /*** end limIndicateProbeReqToHDD() ***/
 
 /**

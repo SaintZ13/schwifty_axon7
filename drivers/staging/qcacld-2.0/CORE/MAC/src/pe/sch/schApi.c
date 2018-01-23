@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2014, 2016-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2014, 2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -39,7 +39,8 @@
  */
 #include "palTypes.h"
 #include "aniGlobal.h"
-#include "wni_cfg.h"
+#include "wniCfgSta.h"
+
 #include "sirMacProtDef.h"
 #include "sirMacPropExts.h"
 #include "sirCommon.h"
@@ -346,8 +347,7 @@ tSirRetStatus schSendBeaconReq( tpAniSirGlobal pMac, tANI_U8 *beaconPayload, tAN
         FL("Successfully posted WDA_SEND_BEACON_REQ to HAL"));
 
     if (LIM_IS_AP_ROLE(psessionEntry) &&
-        pMac->sch.schObject.fBeaconChanged &&
-        vos_is_probe_rsp_offload_enabled()) {
+        pMac->sch.schObject.fBeaconChanged) {
         if(eSIR_SUCCESS != (retCode = limSendProbeRspTemplateToHal(pMac,psessionEntry,
                                     &psessionEntry->DefProbeRspIeBitmap[0])))
         {

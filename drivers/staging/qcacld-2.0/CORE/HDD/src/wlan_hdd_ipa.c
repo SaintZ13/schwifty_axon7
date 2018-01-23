@@ -1210,20 +1210,7 @@ void hdd_ipa_dump_iface_context(struct hdd_ipa_priv *hdd_ipa)
  */
 void hdd_ipa_dump_info(hdd_context_t *hdd_ctx)
 {
-	struct hdd_ipa_priv *hdd_ipa;
-
-	if (wlan_hdd_validate_context(hdd_ctx))
-		return;
-
-	hdd_ipa = (struct hdd_ipa_priv *)hdd_ctx->hdd_ipa;
-	if (!hdd_ipa_is_enabled(hdd_ctx) ||
-	    !hdd_ipa_uc_is_enabled(hdd_ipa)) {
-		HDD_IPA_LOG(VOS_TRACE_LEVEL_ERROR,
-			"IPA/IPA UC is not enabled, IpaConfig %u,IpaUcOffloadEnabled %u.",
-			hdd_ctx->cfg_ini->IpaConfig,
-			hdd_ctx->cfg_ini->IpaUcOffloadEnabled);
-		return;
-	}
+	struct hdd_ipa_priv *hdd_ipa = (struct hdd_ipa_priv *)hdd_ctx->hdd_ipa;
 
 	hdd_ipa_dump_hdd_ipa(hdd_ipa);
 	hdd_ipa_dump_sys_pipe(hdd_ipa);
@@ -2256,7 +2243,7 @@ static int hdd_ipa_uc_disconnect_client(hdd_adapter_t *adapter)
 
 	for (i = 0; i < WLAN_MAX_STA_COUNT; i++) {
 		if (vos_is_macaddr_broadcast(&adapter->aStaInfo[i].macAddrSTA))
-			continue;
+			return ret;
 		if ((adapter->aStaInfo[i].isUsed) &&
 		   (!adapter->aStaInfo[i].isDeauthInProgress) &&
 		   hdd_ipa->sap_num_connected_sta) {
@@ -3304,9 +3291,6 @@ static void hdd_ipa_w2i_cb(void *priv, enum ipa_dp_evt_type evt,
 	adf_nbuf_t buf;
 
 	hdd_ipa = (struct hdd_ipa_priv *)priv;
-
-	if (!hdd_ipa || wlan_hdd_validate_context(hdd_ipa->hdd_ctx))
-		return;
 
 	switch (evt) {
 	case IPA_RECEIVE:
@@ -4515,24 +4499,21 @@ int hdd_ipa_wlan_evt(hdd_adapter_t *adapter, uint8_t sta_id,
 			vos_lock_release(&hdd_ipa->event_lock);
 			return -EINVAL;
 		}
-
+		hdd_ipa->sta_connected = 0;
 		if (!hdd_ipa_uc_is_enabled(hdd_ipa)) {
 			HDD_IPA_LOG(VOS_TRACE_LEVEL_INFO,
 				"%s: IPA UC OFFLOAD NOT ENABLED",
 				msg_ex->name);
 		} else {
 			/* Disable IPA UC TX PIPE when STA disconnected */
-			if ((!hdd_ipa->sap_num_connected_sta &&
-			     hdd_ipa->sta_connected) ||
-			    (!hdd_ipa->num_iface &&
-			    (HDD_IPA_UC_NUM_WDI_PIPE ==
-					hdd_ipa->activated_fw_pipe) &&
-			    !hdd_ipa->ipa_pipes_down)) {
+			if ((!hdd_ipa->sap_num_connected_sta) ||
+				((!hdd_ipa->num_iface) &&
+					(HDD_IPA_UC_NUM_WDI_PIPE ==
+					hdd_ipa->activated_fw_pipe &&
+					!hdd_ipa->ipa_pipes_down))) {
 				hdd_ipa_uc_handle_last_discon(hdd_ipa);
 			}
 		}
-
-		hdd_ipa->sta_connected = 0;
 
 		vos_lock_release(&hdd_ipa->event_lock);
 

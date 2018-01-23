@@ -406,6 +406,12 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
+		   -mcpu=cortex-a57 -mtune=cortex-a57 \
+                   -fno-aggressive-loop-optimizations \
+                   -funswitch-loops -fpredictive-commoning -fgcse-after-reload \
+		   -Wno-array-bounds \
+                   -fmodulo-sched -fmodulo-sched-allow-regmoves -fno-tree-vectorize -ffast-math \
+		   -fno-delete-null-pointer-checks -Wno-maybe-uninitialized \
 		   -std=gnu89
 
 KBUILD_AFLAGS_KERNEL :=

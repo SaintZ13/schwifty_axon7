@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -429,16 +429,13 @@ static A_STATUS HTCSendBundledNetbuf(HTC_TARGET *target,
     if (status != A_OK){
         adf_os_print("%s:HIFSend_head failed(len=%zu).\n", __FUNCTION__,
                 data_len);
-        LOCK_HTC_TX(target);
-        HTC_PACKET_REMOVE(&pEndpoint->TxLookupQueue, pPacketTx);
-        UNLOCK_HTC_TX(target);
     }
     return status;
 }
 
-static A_STATUS HTCIssuePacketsBundle(HTC_TARGET *target,
-                                      HTC_ENDPOINT *pEndpoint,
-                                      HTC_PACKET_QUEUE *pPktQueue)
+static void HTCIssuePacketsBundle(HTC_TARGET *target,
+                                  HTC_ENDPOINT *pEndpoint,
+                                  HTC_PACKET_QUEUE *pPktQueue)
 {
    int              i, frag_count, nbytes;
    adf_nbuf_t       netbuf, bundleBuf;
@@ -450,7 +447,6 @@ static A_STATUS HTCIssuePacketsBundle(HTC_TARGET *target,
    int              last_creditPad = 0;
    int              creditPad, creditRemainder,transferLength, bundlesSpaceRemaining = 0;
    HTC_PACKET_QUEUE *pQueueSave = NULL;
-   A_STATUS ret;
 
    bundlesSpaceRemaining = HTC_MAX_MSG_PER_BUNDLE_TX * pEndpoint->TxCreditSize;
 
@@ -460,8 +456,7 @@ static A_STATUS HTCIssuePacketsBundle(HTC_TARGET *target,
        //good time to panic
        AR_DEBUG_PRINTF(ATH_DEBUG_ERR, ("AllocateHTCBundleTxPacket failed \n"));
        AR_DEBUG_ASSERT(FALSE);
-       ret = A_NO_MEMORY;
-       goto failed1;
+       return;
    }
    bundleBuf = GET_HTC_PACKET_NET_BUF_CONTEXT(pPacketTx);
    pBundleBuffer = adf_nbuf_data(bundleBuf);
@@ -485,30 +480,19 @@ static A_STATUS HTCIssuePacketsBundle(HTC_TARGET *target,
 
        if (bundlesSpaceRemaining < transferLength){
            /* send out previous buffer */
-           if (A_OK != HTCSendBundledNetbuf(target, pEndpoint,
-                                pBundleBuffer - last_creditPad, pPacketTx)) {
-               ret = A_EBUSY;
-               HTC_PACKET_ENQUEUE(pQueueSave, pPacket);
-               goto failed2;
-           }
-
-           /* One packet has been dequeued from sending queue when enter
-            * this loop, so need to add 1 back for this checking.
-            */
-           if ((HTC_PACKET_QUEUE_DEPTH(pPktQueue) + 1) < HTC_MIN_MSG_PER_BUNDLE){
-               HTC_PACKET_ENQUEUE_TO_HEAD(pPktQueue, pPacket);
-               goto success;
+           HTCSendBundledNetbuf(target, pEndpoint,
+                                pBundleBuffer - last_creditPad, pPacketTx);
+           if (HTC_PACKET_QUEUE_DEPTH(pPktQueue) < HTC_MIN_MSG_PER_BUNDLE){
+               return;
            }
            bundlesSpaceRemaining = HTC_MAX_MSG_PER_BUNDLE_TX * pEndpoint->TxCreditSize;
            pPacketTx = AllocateHTCBundleTxPacket(target);
            if (!pPacketTx)
            {
-               HTC_PACKET_ENQUEUE_TO_HEAD(pPktQueue, pPacket);
                //good time to panic
                AR_DEBUG_PRINTF(ATH_DEBUG_ERR, ("AllocateHTCBundleTxPacket failed \n"));
                AR_DEBUG_ASSERT(FALSE);
-               ret = A_NO_MEMORY;
-               goto failed1;
+               return;
            }
            bundleBuf = GET_HTC_PACKET_NET_BUF_CONTEXT(pPacketTx);
            pBundleBuffer = adf_nbuf_data(bundleBuf);
@@ -549,27 +533,11 @@ static A_STATUS HTCIssuePacketsBundle(HTC_TARGET *target,
    }
    if (pBundleBuffer != adf_nbuf_data(bundleBuf)){
        /* send out remaining buffer */
-       if (A_OK != HTCSendBundledNetbuf(target, pEndpoint,
-                            pBundleBuffer - last_creditPad, pPacketTx))
-       {
-           ret = A_EBUSY;
-           goto failed2;
-       }
+       HTCSendBundledNetbuf(target, pEndpoint,
+                            pBundleBuffer - last_creditPad, pPacketTx);
    } else {
        FreeHTCBundleTxPacket(target, pPacketTx);
    }
-
-success:
-   return A_OK;
-
-failed2:
-    if (!HTC_QUEUE_EMPTY(pQueueSave))
-       HTC_PACKET_QUEUE_TRANSFER_TO_HEAD(pPktQueue, pQueueSave);
-    FreeHTCBundleTxPacket(target, pPacketTx);
-failed1:
-    AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
-                    ("send bundle buffer failed(%d) \n", ret));
-    return ret;
 }
 #endif /* ENABLE_BUNDLE_TX */
 #endif
@@ -1174,9 +1142,9 @@ static HTC_SEND_QUEUE_RESULT HTCTrySend(HTC_TARGET       *target,
             AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
                ("htc_issue_packets, failed status:%d put it back to head of callers SendQueue",
                result));
-            LOCK_HTC_TX(target);
             HTC_PACKET_QUEUE_TRANSFER_TO_HEAD(&pEndpoint->TxQueue,
                              &sendQueue);
+            LOCK_HTC_TX(target);
             break;
         }
 

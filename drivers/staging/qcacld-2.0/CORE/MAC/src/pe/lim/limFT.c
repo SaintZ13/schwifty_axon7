@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -336,22 +336,16 @@ void limPerformFTPreAuth(tpAniSirGlobal pMac, eHalStatus status,
                          tANI_U32 *data, tpPESession psessionEntry)
 {
     tSirMacAuthFrameBody authFrame;
-    tANI_U32 session_id;
-    eCsrAuthType auth_type;
 
     if (NULL == psessionEntry) {
         PELOGE(limLog(pMac, LOGE, FL("psessionEntry is NULL"));)
         return;
     }
 
-    session_id = psessionEntry->smeSessionId;
-    auth_type = pMac->roam.roamSession[session_id].connectedProfile.AuthType;
-
     if (psessionEntry->is11Rconnection &&
         psessionEntry->ftPEContext.pFTPreAuthReq) {
         /* Only 11r assoc has FT IEs */
-        if ((auth_type != eCSR_AUTH_TYPE_OPEN_SYSTEM) &&
-            (psessionEntry->ftPEContext.pFTPreAuthReq->ft_ies_length == 0)) {
+        if (psessionEntry->ftPEContext.pFTPreAuthReq->ft_ies_length == 0) {
             PELOGE(limLog( pMac, LOGE,
                            "%s: FTIEs for Auth Req Seq 1 is absent",
                            __func__);)
@@ -442,6 +436,7 @@ tSirRetStatus limFTPrepareAddBssReq( tpAniSirGlobal pMac,
     tpSirBssDescription bssDescription )
 {
     tpAddBssParams pAddBssParams = NULL;
+    tANI_U8 i;
     tANI_U8 chanWidthSupp = 0;
     tSchBeaconStruct *pBeaconStruct;
 
@@ -770,6 +765,17 @@ tSirRetStatus limFTPrepareAddBssReq( tpAniSirGlobal pMac,
         }
     }
 
+    //Disable BA. It will be set as part of ADDBA negotiation.
+    for( i = 0; i < STACFG_MAX_TC; i++ )
+    {
+        pAddBssParams->staContext.staTCParams[i].txUseBA    = eBA_DISABLE;
+        pAddBssParams->staContext.staTCParams[i].rxUseBA    = eBA_DISABLE;
+        pAddBssParams->staContext.staTCParams[i].txBApolicy =
+                                                      eBA_POLICY_IMMEDIATE;
+        pAddBssParams->staContext.staTCParams[i].rxBApolicy =
+                                                      eBA_POLICY_IMMEDIATE;
+    }
+
 #if defined WLAN_FEATURE_VOWIFI
     pAddBssParams->maxTxPower = pftSessionEntry->maxTxPower;
 #endif
@@ -822,6 +828,7 @@ void limFillFTSession(tpAniSirGlobal pMac,
    tPowerdBm         localPowerConstraint;
    tPowerdBm         regMax;
    tSchBeaconStruct  *pBeaconStruct;
+   tANI_U32          selfDot11Mode;
    ePhyChanBondState cbEnabledMode;
 #ifdef WLAN_FEATURE_11W
    VOS_STATUS vosStatus;
@@ -868,10 +875,9 @@ void limFillFTSession(tpAniSirGlobal pMac,
    vos_mem_copy(pftSessionEntry->ssId.ssId, pBeaconStruct->ssId.ssId,
          pftSessionEntry->ssId.length);
 
-
-   pftSessionEntry->dot11mode =
-                  psessionEntry->ftPEContext.pFTPreAuthReq->dot11mode;
-   limLog(pMac, LOG1, FL("dot11mode %d"), pftSessionEntry->dot11mode);
+   wlan_cfgGetInt(pMac, WNI_CFG_DOT11_MODE, &selfDot11Mode);
+   limLog(pMac, LOG1, FL("selfDot11Mode %d"),selfDot11Mode );
+   pftSessionEntry->dot11mode = selfDot11Mode;
    pftSessionEntry->vhtCapability =
          (IS_DOT11_MODE_VHT(pftSessionEntry->dot11mode)
          && IS_BSS_VHT_CAPABLE(pBeaconStruct->VHTCaps));

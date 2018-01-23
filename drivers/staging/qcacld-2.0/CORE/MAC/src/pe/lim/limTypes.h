@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -90,6 +90,13 @@
 #define LIM_MLM_SETKEYS_CNF         (LIM_MLM_MSG_START + 25)
 #define LIM_MLM_LINK_TEST_STOP_REQ  (LIM_MLM_MSG_START + 30)
 #define LIM_MLM_PURGE_STA_IND       (LIM_MLM_MSG_START + 31)
+#define LIM_MLM_ADDBA_REQ           (LIM_MLM_MSG_START + 32)
+#define LIM_MLM_ADDBA_CNF           (LIM_MLM_MSG_START + 33)
+#define LIM_MLM_ADDBA_IND           (LIM_MLM_MSG_START + 34)
+#define LIM_MLM_ADDBA_RSP           (LIM_MLM_MSG_START + 35)
+#define LIM_MLM_DELBA_REQ           (LIM_MLM_MSG_START + 36)
+#define LIM_MLM_DELBA_CNF           (LIM_MLM_MSG_START + 37)
+#define LIM_MLM_DELBA_IND           (LIM_MLM_MSG_START + 38)
 #define LIM_MLM_REMOVEKEY_REQ  (LIM_MLM_MSG_START + 39)
 #define LIM_MLM_REMOVEKEY_CNF  (LIM_MLM_MSG_START + 40)
 
@@ -256,18 +263,6 @@ typedef struct sLimMlmAssocInd
     tANI_U32             assocReqLength;
     tANI_U8*             assocReqPtr;
     tSirSmeChanInfo      chan_info;
-    uint8_t              ecsa_capable;
-    bool                 ampdu;
-    bool                 sgi_enable;
-    bool                 tx_stbc;
-    bool                 rx_stbc;
-    tSirMacHTChannelWidth ch_width;
-    enum sir_sme_phy_mode mode;
-    uint8_t              max_supp_idx;
-    uint8_t              max_ext_idx;
-    uint8_t              max_mcs_idx;
-    uint8_t              rx_mcs_map;
-    uint8_t              tx_mcs_map;
 } tLimMlmAssocInd, *tpLimMlmAssocInd;
 
 typedef struct sLimMlmReassocReq
@@ -308,7 +303,6 @@ typedef struct sLimMlmReassocInd
     tANI_U8*             beaconPtr;
     tANI_U32             assocReqLength;
     tANI_U8*             assocReqPtr;
-    uint8_t              ecsa_capable;
 } tLimMlmReassocInd, *tpLimMlmReassocInd;
 
 typedef struct sLimMlmAuthCnf
@@ -693,8 +687,6 @@ void limSendDeauthMgmtFrame(tpAniSirGlobal, tANI_U16, tSirMacAddr, tpPESession, 
 void limSendSmeDisassocDeauthNtf(tpAniSirGlobal pMac, eHalStatus status,
                                  tANI_U32 *pCtx);
 
-void limDoSendAuthMgmtFrame(tpAniSirGlobal, tpPESession);
-
 void limContinueChannelScan(tpAniSirGlobal);
 tSirResultCodes limMlmAddBss(tpAniSirGlobal, tLimMlmStartReq *,tpPESession psessionEntry);
 
@@ -826,6 +818,15 @@ tANI_U8 limIsLinkSuspended(tpAniSirGlobal pMac);
 void limSuspendLink(tpAniSirGlobal, tSirLinkTrafficCheck, SUSPEND_RESUME_LINK_CALLBACK, tANI_U32*);
 void limResumeLink(tpAniSirGlobal, SUSPEND_RESUME_LINK_CALLBACK, tANI_U32*);
 //end WLAN_SUSPEND_LINK Related
+
+tSirRetStatus limSendAddBAReq( tpAniSirGlobal pMac,
+    tpLimMlmAddBAReq pMlmAddBAReq,tpPESession);
+
+tSirRetStatus limSendAddBARsp( tpAniSirGlobal pMac,
+    tpLimMlmAddBARsp pMlmAddBARsp,tpPESession);
+
+tSirRetStatus limSendDelBAInd( tpAniSirGlobal pMac,
+    tpLimMlmDelBAReq pMlmDelBAReq ,tpPESession psessionEntry);
 
 void limProcessMlmHalAddBARsp( tpAniSirGlobal pMac,
     tpSirMsgQ limMsgQ );
@@ -1035,7 +1036,6 @@ typedef struct sSetLinkCbackParams
 #endif
 
 void limProcessRxScanEvent(tpAniSirGlobal mac, void *buf);
-void lim_process_rx_channel_status_event(tpAniSirGlobal mac_ctx, void *buf);
 
 int limProcessRemainOnChnlReq(tpAniSirGlobal pMac, tANI_U32 *pMsg);
 void limRemainOnChnRsp(tpAniSirGlobal pMac, eHalStatus status, tANI_U32 *data);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014, 2016-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011, 2014, 2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -72,6 +72,9 @@
 
 /*--- setup / tear-down functions -------------------------------------------*/
 
+#ifdef QCA_SUPPORT_TXDESC_SANITY_CHECKS
+u_int32_t *g_dbg_htt_desc_end_addr, *g_dbg_htt_desc_start_addr;
+#endif
 
 /**
  * htt_tx_desc_get_size() - get tx descripotrs size
@@ -879,6 +882,12 @@ int htt_tx_ipa_uc_attach(struct htt_pdev_t *pdev,
                adf_nbuf_free(pdev->ipa_uc_tx_rsc.tx_buf_pool_vaddr_strg[idx]);
            }
        }
+   }
+
+   if (tx_buffer_count_pwr2 < 0) {
+       adf_os_print("%s: Failed to round down Tx buffer count %d",
+                   __func__, tx_buffer_count_pwr2);
+       goto free_tx_comp_base;
    }
 
    pdev->ipa_uc_tx_rsc.alloc_tx_buf_cnt = tx_buffer_count_pwr2;

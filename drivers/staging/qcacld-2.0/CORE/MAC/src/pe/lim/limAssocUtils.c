@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -42,7 +42,7 @@
 #include "wniApi.h"
 #include "sirCommon.h"
 
-#include "wni_cfg.h"
+#include "wniCfgSta.h"
 #include "pmmApi.h"
 #include "cfgApi.h"
 
@@ -880,15 +880,15 @@ limSendDelStaCnf(tpAniSirGlobal pMac, tSirMacAddr staDsAddr,
                                     mlmStaContext.resultCode,
                                     mlmStaContext.protStatusCode,
                                     psessionEntry->peSessionId);
-
-            limSendSmeJoinReassocRsp(pMac, eWNI_SME_REASSOC_RSP,
-                               mlmStaContext.resultCode, mlmStaContext.protStatusCode, psessionEntry,
-                               smesessionId, smetransactionId);
             if(mlmStaContext.resultCode != eSIR_SME_SUCCESS )
             {
                 peDeleteSession(pMac, psessionEntry);
                 psessionEntry = NULL;
             }
+
+            limSendSmeJoinReassocRsp(pMac, eWNI_SME_REASSOC_RSP,
+                               mlmStaContext.resultCode, mlmStaContext.protStatusCode, psessionEntry,
+                               smesessionId, smetransactionId);
         }
         else
         {
@@ -902,17 +902,17 @@ limSendDelStaCnf(tpAniSirGlobal pMac, tSirMacAddr staDsAddr,
                                     mlmStaContext.protStatusCode,
                                     psessionEntry->peSessionId);
 
+            if(mlmStaContext.resultCode != eSIR_SME_SUCCESS)
+            {
+                peDeleteSession(pMac,psessionEntry);
+                psessionEntry = NULL;
+            }
 
             limSendSmeJoinReassocRsp(pMac, eWNI_SME_JOIN_RSP,
                                      mlmStaContext.resultCode,
                                      mlmStaContext.protStatusCode,
                                      psessionEntry, smesessionId,
                                      smetransactionId);
-            if(mlmStaContext.resultCode != eSIR_SME_SUCCESS)
-            {
-                peDeleteSession(pMac,psessionEntry);
-                psessionEntry = NULL;
-            }
         }
 
     }
@@ -2647,6 +2647,13 @@ limAddSta(
     }
 #endif
 
+    //Disable BA. It will be set as part of ADDBA negotiation.
+    for( i = 0; i < STACFG_MAX_TC; i++ )
+    {
+          pAddStaParams->staTCParams[i].txUseBA = eBA_DISABLE;
+          pAddStaParams->staTCParams[i].rxUseBA = eBA_DISABLE;
+    }
+
 #ifdef FEATURE_WLAN_TDLS
     if(pStaDs->wmeEnabled &&
       (LIM_IS_AP_ROLE(psessionEntry) ||
@@ -3322,19 +3329,6 @@ limDeleteDphHashEntry(tpAniSirGlobal pMac, tSirMacAddr staAddr, tANI_U16 staId,t
                 }
             }
 
-            if (pStaDs->non_ecsa_capable) {
-                    if (psessionEntry->lim_non_ecsa_cap_num == 0) {
-                            limLog(pMac, LOGE,
-                                   FL("Non ECSA sta cnt 0, sta: %d is ecsa\n"),
-                                   staId);
-                    } else {
-                            psessionEntry->lim_non_ecsa_cap_num--;
-                            limLog(pMac, LOGE,
-                                   FL("reducing the non ECSA num to %d"),
-                                   psessionEntry->lim_non_ecsa_cap_num);
-                    }
-            }
-
             if (LIM_IS_IBSS_ROLE(psessionEntry))
                 limIbssDecideProtectionOnDelete(pMac, pStaDs, &beaconParams, psessionEntry);
 
@@ -3361,6 +3355,8 @@ limDeleteDphHashEntry(tpAniSirGlobal pMac, tSirMacAddr staAddr, tANI_U16 staId,t
 #endif
     }
 }
+
+
 
 /**
  * limCheckAndAnnounceJoinSuccess()
@@ -3510,8 +3506,6 @@ limCheckAndAnnounceJoinSuccess(tpAniSirGlobal pMac,
                     "VHT caps are present in vendor specific IE"));
     }
 
-    /* Update HS 2.0 Information Element */
-    sir_copy_hs20_ie(&psessionEntry->hs20vendor_ie, &pBPR->hs20vendor_ie);
 }
 
 /**
@@ -3766,6 +3760,7 @@ tSirRetStatus limStaSendAddBss( tpAniSirGlobal pMac, tpSirAssocRsp pAssocRsp,
     tSirMsgQ msgQ;
     tpAddBssParams pAddBssParams = NULL;
     tSirRetStatus retCode = eSIR_SUCCESS;
+    tANI_U8 i;
     tpDphHashNode pStaDs = NULL;
     tANI_U8 chanWidthSupp = 0;
     tANI_U32 shortGi20MhzSupport;
@@ -4204,6 +4199,15 @@ tSirRetStatus limStaSendAddBss( tpAniSirGlobal pMac, tpSirAssocRsp pAssocRsp,
 
     }
 
+    //Disable BA. It will be set as part of ADDBA negotiation.
+    for( i = 0; i < STACFG_MAX_TC; i++ )
+    {
+        pAddBssParams->staContext.staTCParams[i].txUseBA    = eBA_DISABLE;
+        pAddBssParams->staContext.staTCParams[i].rxUseBA    = eBA_DISABLE;
+        pAddBssParams->staContext.staTCParams[i].txBApolicy = eBA_POLICY_IMMEDIATE;
+        pAddBssParams->staContext.staTCParams[i].rxBApolicy = eBA_POLICY_IMMEDIATE;
+    }
+
     pAddBssParams->staContext.encryptType =  psessionEntry->encryptType;
 
 #if defined WLAN_FEATURE_VOWIFI
@@ -4266,11 +4270,6 @@ tSirRetStatus limStaSendAddBss( tpAniSirGlobal pMac, tpSirAssocRsp pAssocRsp,
     //we need to defer the message until we get the response back from HAL.
     SET_LIM_PROCESS_DEFD_MESGS(pMac, false);
 
-    if (psessionEntry->sub20_channelwidth == SUB20_MODE_5MHZ)
-            pAddBssParams->channelwidth = CH_WIDTH_5MHZ;
-    else if (psessionEntry->sub20_channelwidth == SUB20_MODE_10MHZ)
-            pAddBssParams->channelwidth = CH_WIDTH_10MHZ;
-
     msgQ.type = WDA_ADD_BSS_REQ;
     /** @ToDo : Update the Global counter to keeptrack of the PE <--> HAL messages*/
     msgQ.reserved = 0;
@@ -4308,6 +4307,7 @@ tSirRetStatus limStaSendAddBssPreAssoc( tpAniSirGlobal pMac, tANI_U8 updateEntry
     tSirMsgQ msgQ;
     tpAddBssParams pAddBssParams = NULL;
     tANI_U32 retCode;
+    tANI_U8 i;
     tSchBeaconStruct *pBeaconStruct;
     tANI_U8 chanWidthSupp = 0;
     tANI_U32 shortGi20MhzSupport;
@@ -4341,10 +4341,11 @@ tSirRetStatus limStaSendAddBssPreAssoc( tpAniSirGlobal pMac, tANI_U8 updateEntry
                             GET_IE_LEN_IN_BSS(bssDescription->length),
                             pBeaconStruct);
 
-    if(pMac->lim.gLimProtectionControl != WNI_CFG_FORCE_POLICY_PROTECTION_DISABLE)
+    if (pMac->lim.gLimProtectionControl != WNI_CFG_FORCE_POLICY_PROTECTION_DISABLE) {
         limDecideStaProtectionOnAssoc(pMac, pBeaconStruct, psessionEntry);
-    vos_mem_copy(pAddBssParams->bssId, bssDescription->bssId,
+        vos_mem_copy(pAddBssParams->bssId, bssDescription->bssId,
                      sizeof(tSirMacAddr));
+    }
 
     // Fill in tAddBssParams selfMacAddr
     vos_mem_copy(pAddBssParams->selfMacAddr,
@@ -4678,6 +4679,16 @@ tSirRetStatus limStaSendAddBssPreAssoc( tpAniSirGlobal pMac, tANI_U8 updateEntry
 
     }
 
+
+    //Disable BA. It will be set as part of ADDBA negotiation.
+    for( i = 0; i < STACFG_MAX_TC; i++ )
+    {
+        pAddBssParams->staContext.staTCParams[i].txUseBA    = eBA_DISABLE;
+        pAddBssParams->staContext.staTCParams[i].rxUseBA    = eBA_DISABLE;
+        pAddBssParams->staContext.staTCParams[i].txBApolicy = eBA_POLICY_IMMEDIATE;
+        pAddBssParams->staContext.staTCParams[i].rxBApolicy = eBA_POLICY_IMMEDIATE;
+    }
+
     pAddBssParams->staContext.encryptType = psessionEntry->encryptType;
 
 #if defined WLAN_FEATURE_VOWIFI
@@ -4727,11 +4738,6 @@ tSirRetStatus limStaSendAddBssPreAssoc( tpAniSirGlobal pMac, tANI_U8 updateEntry
 
     //we need to defer the message until we get the response back from HAL.
     SET_LIM_PROCESS_DEFD_MESGS(pMac, false);
-
-    if (psessionEntry->sub20_channelwidth == SUB20_MODE_5MHZ)
-            pAddBssParams->channelwidth = CH_WIDTH_5MHZ;
-    else if (psessionEntry->sub20_channelwidth == SUB20_MODE_10MHZ)
-            pAddBssParams->channelwidth = CH_WIDTH_10MHZ;
 
     msgQ.type = WDA_ADD_BSS_REQ;
     /** @ToDo : Update the Global counter to keeptrack of the PE <--> HAL messages*/
